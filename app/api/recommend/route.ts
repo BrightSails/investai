@@ -56,7 +56,7 @@ export async function POST(request: Request) {
           riskLevel: p.riskLevel,
           expectedReturn: p.expectedReturn,
           investmentThreshold: p.investmentThreshold,
-          description: p.description,
+          description: p.description ?? undefined,
         })),
       },
       apiKey,
