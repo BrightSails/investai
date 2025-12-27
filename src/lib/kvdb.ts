@@ -49,6 +49,28 @@ export interface Recommendation {
   createdAt: string
 }
 
+// ==================== 连接串兜底 ====================
+
+function ensureConnectionString() {
+  if (!process.env.POSTGRES_URL) {
+    const fallback =
+      process.env.DATABASE_URL ??
+      process.env.POSTGRES_PRISMA_URL ??
+      process.env.POSTGRES_URL_NON_POOLING
+    if (fallback) {
+      process.env.POSTGRES_URL = fallback
+    }
+  }
+
+  if (!process.env.POSTGRES_URL) {
+    throw new Error(
+      'Missing Postgres connection string. Please configure POSTGRES_URL (or DATABASE_URL) in the environment.'
+    )
+  }
+}
+
+ensureConnectionString()
+
 // ==================== Postgres 初始化 ====================
 
 let initPromise: Promise<void> | null = null
