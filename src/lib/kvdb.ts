@@ -1,312 +1,404 @@
-import { kv } from '@vercel/kv';
+import { sql } from '@vercel/postgres'
 
 // ==================== 类型定义 ====================
 export interface User {
-  id: number;
-  username: string;
-  password: string;
-  createdAt: string;
-  updatedAt: string;
+  id: number
+  username: string
+  password: string
+  createdAt: string
+  updatedAt: string
 }
 
 export interface UserProfile {
-  id: number;
-  userId: number;
-  riskPreference: string;
-  investmentAmount: number;
-  investmentPeriod: string;
-  investmentGoal: string;
-  updatedAt: string;
+  id: number
+  userId: number
+  riskPreference: string
+  investmentAmount: number
+  investmentPeriod: string
+  investmentGoal: string
+  updatedAt: string
 }
 
 export interface Project {
-  id: number;
-  name: string;
-  type: string;
-  riskLevel: number;
-  expectedReturn: number;
-  investmentThreshold: number;
-  description?: string;
-  createdAt: string;
-  updatedAt: string;
+  id: number
+  name: string
+  type: string
+  riskLevel: number
+  expectedReturn: number
+  investmentThreshold: number
+  description?: string | null
+  createdAt: string
+  updatedAt: string
 }
 
 export interface Recommendation {
-  id: number;
-  userId: number;
-  overallExpectedReturn: number;
-  overallRiskLevel: number;
-  matchScore: number;
+  id: number
+  userId: number
+  overallExpectedReturn: number
+  overallRiskLevel: number
+  matchScore: number
   projectAllocations: Array<{
-    projectId: number;
-    projectName: string;
-    allocationType: string;
-    allocationRatio: number;
-    expectedReturnContribution: number;
-    riskWarning: string;
-  }>;
-  reasoning: string;
-  createdAt: string;
+    projectId: number
+    projectName: string
+    allocationType: string
+    allocationRatio: number
+    expectedReturnContribution: number
+    riskWarning: string
+  }>
+  reasoning: string
+  createdAt: string
 }
 
-// ==================== KV键名常量 ====================
-const KEYS = {
-  USERS: 'users:all',
-  USER_BY_ID: (id: number) => `user:${id}`,
-  USER_BY_USERNAME: (username: string) => `user:username:${username}`,
-  
-  PROFILES: 'profiles:all',
-  PROFILE_BY_USER: (userId: number) => `profile:user:${userId}`,
-  
-  PROJECTS: 'projects:all',
-  PROJECT_BY_ID: (id: number) => `project:${id}`,
-  
-  RECOMMENDATIONS: 'recommendations:all',
-  RECOMMENDATIONS_BY_USER: (userId: number) => `recommendations:user:${userId}`,
-  
-  COUNTERS: {
-    USER: 'counter:user',
-    PROFILE: 'counter:profile',
-    PROJECT: 'counter:project',
-    RECOMMENDATION: 'counter:recommendation',
+// ==================== Postgres 初始化 ====================
+
+let initPromise: Promise<void> | null = null
+let initialized = false
+
+async function ensureTables(): Promise<void> {
+  if (initialized) return
+  if (initPromise) {
+    return initPromise
   }
-};
 
-// ==================== 辅助函数 ====================
+  initPromise = (async () => {
+    await sql`CREATE TABLE IF NOT EXISTS users (
+      id SERIAL PRIMARY KEY,
+      username TEXT UNIQUE NOT NULL,
+      password TEXT NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );`
 
-// 生成自增ID
-async function getNextId(counterKey: string): Promise<number> {
-  const id = await kv.incr(counterKey);
-  return id;
+    await sql`CREATE TABLE IF NOT EXISTS user_profiles (
+      id SERIAL PRIMARY KEY,
+      user_id INTEGER UNIQUE NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      risk_preference TEXT NOT NULL,
+      investment_amount DOUBLE PRECISION NOT NULL,
+      investment_period TEXT NOT NULL,
+      investment_goal TEXT NOT NULL,
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );`
+
+    await sql`CREATE TABLE IF NOT EXISTS projects (
+      id SERIAL PRIMARY KEY,
+      name TEXT NOT NULL,
+      type TEXT NOT NULL,
+      risk_level INTEGER NOT NULL,
+      expected_return DOUBLE PRECISION NOT NULL,
+      investment_threshold DOUBLE PRECISION NOT NULL,
+      description TEXT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );`
+
+    await sql`CREATE TABLE IF NOT EXISTS recommendations (
+      id SERIAL PRIMARY KEY,
+      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      overall_expected_return DOUBLE PRECISION NOT NULL,
+      overall_risk_level DOUBLE PRECISION NOT NULL,
+      match_score DOUBLE PRECISION NOT NULL,
+      project_allocations JSONB NOT NULL,
+      reasoning TEXT NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );`
+    initialized = true
+  })().finally(() => {
+    initPromise = null
+  })
+
+  return initPromise
 }
+
+// ==================== 行映射工具 ====================
+
+type DateLike = Date | string
+
+const toIsoString = (value: DateLike): string =>
+  value instanceof Date ? value.toISOString() : new Date(value).toISOString()
+
+const parseNumber = (value: unknown): number =>
+  typeof value === 'number' ? value : Number(value)
+
+const parseAllocations = (value: unknown) => {
+  if (!value) return []
+  if (Array.isArray(value)) return value
+  if (typeof value === 'string') {
+    try {
+      return JSON.parse(value)
+    } catch (error) {
+      console.error('解析 projectAllocations 失败:', error)
+      return []
+    }
+  }
+  return value as Recommendation['projectAllocations']
+}
+
+type UserRow = {
+  id: number
+  username: string
+  password: string
+  created_at: DateLike
+  updated_at: DateLike
+}
+
+type UserProfileRow = {
+  id: number
+  user_id: number
+  risk_preference: string
+  investment_amount: number | string
+  investment_period: string
+  investment_goal: string
+  updated_at: DateLike
+}
+
+type ProjectRow = {
+  id: number
+  name: string
+  type: string
+  risk_level: number | string
+  expected_return: number | string
+  investment_threshold: number | string
+  description: string | null
+  created_at: DateLike
+  updated_at: DateLike
+}
+
+type RecommendationRow = {
+  id: number
+  user_id: number
+  overall_expected_return: number | string
+  overall_risk_level: number | string
+  match_score: number | string
+  project_allocations: unknown
+  reasoning: string
+  created_at: DateLike
+}
+
+const mapUser = (row: UserRow): User => ({
+  id: row.id,
+  username: row.username,
+  password: row.password,
+  createdAt: toIsoString(row.created_at),
+  updatedAt: toIsoString(row.updated_at),
+})
+
+const mapProfile = (row: UserProfileRow): UserProfile => ({
+  id: row.id,
+  userId: row.user_id,
+  riskPreference: row.risk_preference,
+  investmentAmount: parseNumber(row.investment_amount),
+  investmentPeriod: row.investment_period,
+  investmentGoal: row.investment_goal,
+  updatedAt: toIsoString(row.updated_at),
+})
+
+const mapProject = (row: ProjectRow): Project => ({
+  id: row.id,
+  name: row.name,
+  type: row.type,
+  riskLevel: parseNumber(row.risk_level),
+  expectedReturn: parseNumber(row.expected_return),
+  investmentThreshold: parseNumber(row.investment_threshold),
+  description: row.description,
+  createdAt: toIsoString(row.created_at),
+  updatedAt: toIsoString(row.updated_at),
+})
+
+const mapRecommendation = (row: RecommendationRow): Recommendation => ({
+  id: row.id,
+  userId: row.user_id,
+  overallExpectedReturn: parseNumber(row.overall_expected_return),
+  overallRiskLevel: parseNumber(row.overall_risk_level),
+  matchScore: parseNumber(row.match_score),
+  projectAllocations: parseAllocations(row.project_allocations),
+  reasoning: row.reasoning,
+  createdAt: toIsoString(row.created_at),
+})
 
 // ==================== 用户相关操作 ====================
 
 export async function getUsers(): Promise<User[]> {
-  const userIds = await kv.smembers(KEYS.USERS) as number[];
-  if (!userIds || userIds.length === 0) return [];
-  
-  const users = await Promise.all(
-    userIds.map(id => kv.get<User>(KEYS.USER_BY_ID(id)))
-  );
-  
-  return users.filter(u => u !== null) as User[];
+  await ensureTables()
+  const { rows } = await sql<UserRow>`SELECT * FROM users ORDER BY id ASC;`
+  return rows.map(mapUser)
 }
 
 export async function findUserByUsername(username: string): Promise<User | null> {
-  const userId = await kv.get<number>(KEYS.USER_BY_USERNAME(username));
-  if (!userId) return null;
-  
-  return await kv.get<User>(KEYS.USER_BY_ID(userId));
+  await ensureTables()
+  const { rows } = await sql<UserRow>`SELECT * FROM users WHERE username = ${username} LIMIT 1;`
+  if (rows.length === 0) return null
+  return mapUser(rows[0])
 }
 
 export async function findUserById(id: number): Promise<User | null> {
-  return await kv.get<User>(KEYS.USER_BY_ID(id));
+  await ensureTables()
+  const { rows } = await sql<UserRow>`SELECT * FROM users WHERE id = ${id} LIMIT 1;`
+  if (rows.length === 0) return null
+  return mapUser(rows[0])
 }
 
 export async function createUser(username: string, password: string): Promise<User> {
-  const id = await getNextId(KEYS.COUNTERS.USER);
-  const now = new Date().toISOString();
-  
-  const newUser: User = {
-    id,
-    username,
-    password,
-    createdAt: now,
-    updatedAt: now,
-  };
-  
-  // 保存用户数据
-  await kv.set(KEYS.USER_BY_ID(id), newUser);
-  // 保存用户名索引
-  await kv.set(KEYS.USER_BY_USERNAME(username), id);
-  // 添加到用户集合
-  await kv.sadd(KEYS.USERS, id);
-  
-  return newUser;
+  await ensureTables()
+  const { rows } = await sql<UserRow>`
+    INSERT INTO users (username, password)
+    VALUES (${username}, ${password})
+    RETURNING *;
+  `
+  return mapUser(rows[0])
 }
 
 // ==================== 画像相关操作 ====================
 
 export async function getProfiles(): Promise<UserProfile[]> {
-  const profileIds = await kv.smembers(KEYS.PROFILES) as number[];
-  if (!profileIds || profileIds.length === 0) return [];
-  
-  const profiles = await Promise.all(
-    profileIds.map(id => kv.get<UserProfile>(`profile:${id}`))
-  );
-  
-  return profiles.filter(p => p !== null) as UserProfile[];
+  await ensureTables()
+  const { rows } = await sql<UserProfileRow>`SELECT * FROM user_profiles ORDER BY user_id ASC;`
+  return rows.map(mapProfile)
 }
 
 export async function findProfileByUserId(userId: number): Promise<UserProfile | null> {
-  return await kv.get<UserProfile>(KEYS.PROFILE_BY_USER(userId));
+  await ensureTables()
+  const { rows } = await sql<UserProfileRow>`SELECT * FROM user_profiles WHERE user_id = ${userId} LIMIT 1;`
+  if (rows.length === 0) return null
+  return mapProfile(rows[0])
 }
 
 export async function upsertProfile(
   userId: number,
   data: Omit<UserProfile, 'id' | 'userId' | 'updatedAt'>
 ): Promise<UserProfile> {
-  const existing = await findProfileByUserId(userId);
-  const now = new Date().toISOString();
-  
-  if (existing) {
-    // 更新现有画像
-    const updated: UserProfile = {
-      ...existing,
-      ...data,
-      updatedAt: now,
-    };
-    await kv.set(KEYS.PROFILE_BY_USER(userId), updated);
-    await kv.set(`profile:${existing.id}`, updated);
-    return updated;
-  } else {
-    // 创建新画像
-    const id = await getNextId(KEYS.COUNTERS.PROFILE);
-    const newProfile: UserProfile = {
-      id,
-      userId,
-      ...data,
-      updatedAt: now,
-    };
-    
-    await kv.set(KEYS.PROFILE_BY_USER(userId), newProfile);
-    await kv.set(`profile:${id}`, newProfile);
-    await kv.sadd(KEYS.PROFILES, id);
-    
-    return newProfile;
-  }
+  await ensureTables()
+  const { rows } = await sql<UserProfileRow>`
+    INSERT INTO user_profiles (user_id, risk_preference, investment_amount, investment_period, investment_goal)
+    VALUES (${userId}, ${data.riskPreference}, ${data.investmentAmount}, ${data.investmentPeriod}, ${data.investmentGoal})
+    ON CONFLICT (user_id) DO UPDATE SET
+      risk_preference = EXCLUDED.risk_preference,
+      investment_amount = EXCLUDED.investment_amount,
+      investment_period = EXCLUDED.investment_period,
+      investment_goal = EXCLUDED.investment_goal,
+      updated_at = NOW()
+    RETURNING *;
+  `
+  return mapProfile(rows[0])
 }
 
 // ==================== 项目相关操作 ====================
 
 export async function getProjects(): Promise<Project[]> {
-  const projectIds = await kv.smembers(KEYS.PROJECTS) as number[];
-  if (!projectIds || projectIds.length === 0) return [];
-  
-  const projects = await Promise.all(
-    projectIds.map(id => kv.get<Project>(KEYS.PROJECT_BY_ID(id)))
-  );
-  
-  return projects.filter(p => p !== null) as Project[];
+  await ensureTables()
+  const { rows } = await sql<ProjectRow>`SELECT * FROM projects ORDER BY created_at DESC;`
+  return rows.map(mapProject)
 }
 
 export async function findProjectById(id: number): Promise<Project | null> {
-  return await kv.get<Project>(KEYS.PROJECT_BY_ID(id));
+  await ensureTables()
+  const { rows } = await sql<ProjectRow>`SELECT * FROM projects WHERE id = ${id} LIMIT 1;`
+  if (rows.length === 0) return null
+  return mapProject(rows[0])
 }
 
-export async function createProject(data: Omit<Project, 'id' | 'createdAt' | 'updatedAt'>): Promise<Project> {
-  const id = await getNextId(KEYS.COUNTERS.PROJECT);
-  const now = new Date().toISOString();
-  
-  const newProject: Project = {
-    id,
-    ...data,
-    createdAt: now,
-    updatedAt: now,
-  };
-  
-  await kv.set(KEYS.PROJECT_BY_ID(id), newProject);
-  await kv.sadd(KEYS.PROJECTS, id);
-  
-  return newProject;
+export async function createProject(
+  data: Omit<Project, 'id' | 'createdAt' | 'updatedAt'>
+): Promise<Project> {
+  await ensureTables()
+  const { rows } = await sql<ProjectRow>`
+    INSERT INTO projects (name, type, risk_level, expected_return, investment_threshold, description)
+    VALUES (
+      ${data.name},
+      ${data.type},
+      ${data.riskLevel},
+      ${data.expectedReturn},
+      ${data.investmentThreshold},
+      ${data.description ?? null}
+    )
+    RETURNING *;
+  `
+  return mapProject(rows[0])
 }
 
 export async function updateProject(id: number, data: Partial<Project>): Promise<Project | null> {
-  const existing = await findProjectById(id);
-  if (!existing) return null;
-  
-  const updated: Project = {
+  await ensureTables()
+  const existing = await findProjectById(id)
+  if (!existing) return null
+
+  const merged: Project = {
     ...existing,
     ...data,
-    id: existing.id, // 确保ID不变
-    createdAt: existing.createdAt, // 保留创建时间
+    id: existing.id,
+    createdAt: existing.createdAt,
     updatedAt: new Date().toISOString(),
-  };
-  
-  await kv.set(KEYS.PROJECT_BY_ID(id), updated);
-  return updated;
+  }
+
+  const { rows } = await sql<ProjectRow>`
+    UPDATE projects
+    SET
+      name = ${merged.name},
+      type = ${merged.type},
+      risk_level = ${merged.riskLevel},
+      expected_return = ${merged.expectedReturn},
+      investment_threshold = ${merged.investmentThreshold},
+      description = ${merged.description ?? null},
+      updated_at = NOW()
+    WHERE id = ${id}
+    RETURNING *;
+  `
+
+  return rows.length ? mapProject(rows[0]) : null
 }
 
 export async function deleteProject(id: number): Promise<boolean> {
-  const existing = await findProjectById(id);
-  if (!existing) return false;
-  
-  await kv.del(KEYS.PROJECT_BY_ID(id));
-  await kv.srem(KEYS.PROJECTS, id);
-  
-  return true;
+  await ensureTables()
+  const { rows } = await sql<{ id: number }>`DELETE FROM projects WHERE id = ${id} RETURNING id;`
+  return rows.length > 0
 }
 
 // ==================== 推荐记录相关操作 ====================
 
 export async function getRecommendations(): Promise<Recommendation[]> {
-  const recommendationIds = await kv.smembers(KEYS.RECOMMENDATIONS) as number[];
-  if (!recommendationIds || recommendationIds.length === 0) return [];
-  
-  const recommendations = await Promise.all(
-    recommendationIds.map(id => kv.get<Recommendation>(`recommendation:${id}`))
-  );
-  
-  return recommendations.filter(r => r !== null) as Recommendation[];
+  await ensureTables()
+  const { rows } = await sql<RecommendationRow>`SELECT * FROM recommendations ORDER BY created_at DESC;`
+  return rows.map(mapRecommendation)
 }
 
 export async function findRecommendationsByUserId(userId: number): Promise<Recommendation[]> {
-  const recommendationIds = await kv.smembers(KEYS.RECOMMENDATIONS_BY_USER(userId)) as number[];
-  if (!recommendationIds || recommendationIds.length === 0) return [];
-  
-  const recommendations = await Promise.all(
-    recommendationIds.map(id => kv.get<Recommendation>(`recommendation:${id}`))
-  );
-  
-  const validRecommendations = recommendations.filter(r => r !== null) as Recommendation[];
-  
-  // 按创建时间倒序排序
-  return validRecommendations.sort((a, b) => 
-    new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
-  );
+  await ensureTables()
+  const { rows } = await sql<RecommendationRow>`
+    SELECT * FROM recommendations
+    WHERE user_id = ${userId}
+    ORDER BY created_at DESC;
+  `
+  return rows.map(mapRecommendation)
 }
 
 export async function createRecommendation(
   userId: number,
   data: Omit<Recommendation, 'id' | 'userId' | 'createdAt'>
 ): Promise<Recommendation> {
-  const id = await getNextId(KEYS.COUNTERS.RECOMMENDATION);
-  const now = new Date().toISOString();
-  
-  const newRecommendation: Recommendation = {
-    id,
-    userId,
-    ...data,
-    createdAt: now,
-  };
-  
-  await kv.set(`recommendation:${id}`, newRecommendation);
-  await kv.sadd(KEYS.RECOMMENDATIONS, id);
-  await kv.sadd(KEYS.RECOMMENDATIONS_BY_USER(userId), id);
-  
-  return newRecommendation;
+  await ensureTables()
+  const allocations = JSON.stringify(data.projectAllocations || [])
+  const { rows } = await sql<RecommendationRow>`
+    INSERT INTO recommendations (
+      user_id,
+      overall_expected_return,
+      overall_risk_level,
+      match_score,
+      project_allocations,
+      reasoning
+    )
+    VALUES (
+      ${userId},
+      ${data.overallExpectedReturn},
+      ${data.overallRiskLevel},
+      ${data.matchScore},
+      ${allocations}::jsonb,
+      ${data.reasoning}
+    )
+    RETURNING *;
+  `
+  return mapRecommendation(rows[0])
 }
 
-// ==================== 数据迁移/初始化 ====================
+// ==================== 初始化占位（兼容原逻辑） ====================
 
 export async function initializeKV(): Promise<void> {
-  // 检查是否已初始化
-  const initialized = await kv.get('initialized');
-  if (initialized) return;
-  
-  // 初始化计数器（如果不存在）
-  const userCount = await kv.get(KEYS.COUNTERS.USER);
-  if (userCount === null) await kv.set(KEYS.COUNTERS.USER, 0);
-  
-  const profileCount = await kv.get(KEYS.COUNTERS.PROFILE);
-  if (profileCount === null) await kv.set(KEYS.COUNTERS.PROFILE, 0);
-  
-  const projectCount = await kv.get(KEYS.COUNTERS.PROJECT);
-  if (projectCount === null) await kv.set(KEYS.COUNTERS.PROJECT, 0);
-  
-  const recommendationCount = await kv.get(KEYS.COUNTERS.RECOMMENDATION);
-  if (recommendationCount === null) await kv.set(KEYS.COUNTERS.RECOMMENDATION, 0);
-  
-  await kv.set('initialized', true);
+  await ensureTables()
 }

@@ -44,25 +44,34 @@ cd text4
 # 2. 安装依赖
 npm install
 
-# 3. 初始化数据库（JSON文件）
-node scripts/init-db.js
-
-# 4. 配置环境变量（可选，仅智能推荐功能需要）
+# 3. 配置环境变量（Postgres + OpenAI）
 cp .env.example .env.local
-# 编辑 .env.local，填入 OpenAI API Key
+# 使用 vercel env pull 或 Neon 仪表盘，填入 POSTGRES_* / DATABASE_URL
+# (可选) 追加 OPENAI_API_KEY 用于调用大模型
 
-# 5. 启动开发服务器
+# 4. 启动开发服务器
 npm run dev
 
-# 6. 打开浏览器访问
+# 5. 打开浏览器访问
 http://localhost:3000
 ```
 
 ### 环境变量配置
-创建 `.env.local` 文件（可选）：
+创建 `.env.local` 并填入：
 ```env
-# OpenAI API 配置（仅智能推荐功能需要）
-OPENAI_API_KEY=sk-your-api-key-here
+# Postgres (Neon / Vercel)
+POSTGRES_URL=postgresql://<user>:<password>@<pooled-host>/<database>?sslmode=require
+POSTGRES_URL_NON_POOLING=postgresql://<user>:<password>@<direct-host>/<database>?sslmode=require
+POSTGRES_PRISMA_URL=postgresql://<user>:<password>@<pooled-host>/<database>?connect_timeout=15&sslmode=require
+POSTGRES_USER=<user>
+POSTGRES_PASSWORD=<password>
+POSTGRES_DATABASE=<database>
+POSTGRES_HOST=<pooled-host>
+DATABASE_URL=${POSTGRES_URL}
+DATABASE_URL_UNPOOLED=${POSTGRES_URL_NON_POOLING}
+
+# OpenAI API（仅在生成推荐时需要）
+OPENAI_API_KEY=sk-your-api-key
 OPENAI_API_BASE=https://api.openai.com/v1
 
 # JWT 密钥（可选，默认使用内置密钥）
@@ -138,7 +147,7 @@ JWT_SECRET=your-secret-key-here
 - **认证**：JWT (jose) + bcrypt
 - **验证**：Zod
 - **AI集成**：OpenAI 兼容 API
-- **数据存储**：JSON 文件系统
+- **数据存储**：Neon Postgres（通过 @vercel/postgres + SQL）
 
 ### 项目结构
 ```
@@ -167,18 +176,20 @@ text4/
 │   ├── context/
 │   │   └── AuthContext.tsx         # 全局认证状态
 │   └── lib/                         # 工具库
-│       ├── jsondb.ts               # JSON 数据库操作
+│       ├── kvdb.ts                 # Postgres 数据访问层（@vercel/postgres）
 │       ├── auth.ts                 # JWT + bcrypt
+│       ├── openai.ts               # LLM 调用
+│       ├── redis.ts                # 可选 Redis 工具
 │       └── validation.ts           # Zod Schema
 │
-├── data/                            # JSON 数据库
-│   ├── users.json                  # 用户数据
-│   ├── profiles.json               # 投资画像
-│   ├── projects.json               # 投资项目
-│   └── recommendations.json        # 推荐记录
+├── data/                            # 可选：JSON 种子示例
+│   ├── users.json
+│   ├── profiles.json
+│   ├── projects.json
+│   └── recommendations.json
 │
 └── scripts/
-    └── init-db.js                  # 数据库初始化
+    └── init-db.js                  # 旧的 JSON 初始化脚本（保留作参考）
 ```
 
 ### 路由架构（重要特性）
@@ -209,21 +220,24 @@ text4/
 
 ---
 
-## 📊 数据存储（JSON文件系统）
+## 📊 数据存储（Postgres + Neon）
 
-### 数据文件
-| 文件 | 说明 | 示例字段 |
+所有业务数据都存储在 Neon Postgres，`src/lib/kvdb.ts` 会在首次读写时自动运行 `CREATE TABLE IF NOT EXISTS` 语句。
+
+| 表名 | 说明 | 关键字段 |
 |------|------|----------|
-| `data/users.json` | 用户数据 | id, username, password(加密), createdAt |
-| `data/profiles.json` | 投资画像 | userId, riskPreference, investmentAmount, investmentPeriod, investmentGoal |
-| `data/projects.json` | 投资项目 | id, name, type, riskLevel, expectedReturn, investmentThreshold |
-| `data/recommendations.json` | 推荐记录 | id, userId, overallExpectedReturn, overallRiskLevel, matchScore, projectAllocations, reasoning |
+| `users` | 账号信息 | `username`（唯一）、`password`、`created_at` |
+| `user_profiles` | 投资画像 | `user_id`（唯一外键）、风险/金额/期限/目标 |
+| `projects` | 项目库 | `risk_level`、`expected_return`、`investment_threshold` |
+| `recommendations` | 推荐历史 | `overall_expected_return`、`match_score`、`project_allocations` (JSONB) |
 
-### 数据初始化
-```bash
-# 运行初始化脚本创建空的 JSON 文件
-node scripts/init-db.js
-```
+### 数据初始化/排查
+- `.env.local` 中的 `POSTGRES_URL*` 变量由 Vercel / Neon 自动注入，运行 `vercel env pull` 可同步到本地。
+- 首次启动 `npm run dev` 即会创建所需表结构；若需清空数据，可在 Neon 控制台执行：
+  ```sql
+  TRUNCATE TABLE recommendations, projects, user_profiles, users RESTART IDENTITY CASCADE;
+  ```
+- `data/*.json` 和 `scripts/init-db.js` 保留为示例，可用于快速导入演示数据。
 
 ---
 
