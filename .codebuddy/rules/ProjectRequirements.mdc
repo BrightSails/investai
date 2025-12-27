@@ -1,0 +1,256 @@
+---
+description: 
+alwaysApply: true
+enabled: true
+updatedAt: 2025-12-26T12:12:47.913Z
+provider: 
+---
+
+# 期末作业项目规范文档
+
+## 项目概述
+**智能投资推荐应用 (InvestAI)** - 基于 T3 全栈的单页/多页应用
+
+这是一个完整的全栈Web应用项目，用于期末作业展示。系统通过智能体根据用户画像推荐适配的投资配置方案。
+
+### 核心功能模块（4大模块）
+1. **用户中心 (User Center)** - `/user` - 用户注册/登录、投资画像管理
+2. **项目库 (Project Library)** - `/projects` - 投资项目数据管理
+3. **智能推荐 (AI Recommend)** - `/recommend` - 智能体推荐投资配置
+4. **推荐记录 (Recommend History)** - `/history` - 历史推荐记录查看
+
+## 核心技术栈要求
+- **前端框架**: React + Next.js (App Router)
+- **后端**: Next.js API Routes / tRPC
+- **数据库**: SQLite（轻量级本地数据库）
+- **认证**: JWT token 会话管理
+- **安全**: 防XSS、CSRF攻击，密码bcrypt加密
+- **路由**: 客户端路由（无刷新切换）
+
+## 设计规范
+
+### UI/UX设计原则
+1. **色彩方案**: 
+   - 主色调：黑白配色（zinc色系）
+   - 背景：zinc-950、zinc-900、zinc-800
+   - 文字：zinc-100、zinc-400
+   - 避免彩色渐变，保持沉稳大气的视觉效果
+
+2. **布局原则**:
+   - 均等分布在屏幕上
+   - 响应式设计，支持桌面端和移动端
+   - 使用Grid/Flex布局实现均衡布局
+   - 页面元素间距合理，视觉平衡
+
+3. **美观要求**:
+   - 现代化UI设计
+   - 卡片式布局
+   - 图标 + 文字组合
+   - 骨架屏加载状态
+   - 平滑过渡动画
+
+## 项目结构规范
+
+### 文件夹组织逻辑
+```
+/app                    # Next.js App Router页面
+  /api                  # API路由
+  /(pages)             # 页面组件
+  /layout.tsx          # 根布局
+  
+/src
+  /components          # 可复用UI组件
+    /ui               # 基础UI组件
+    /features         # 功能组件
+  /server             # 后端逻辑
+    /api              # tRPC API定义
+    /db               # 数据库相关
+  /lib                # 工具函数
+  /types              # TypeScript类型定义
+  /hooks              # 自定义React Hooks
+  /utils              # 通用工具函数
+
+/public               # 静态资源
+/prisma              # Prisma数据库Schema
+```
+
+## 开发原则
+1. **SOLID原则**: 单一职责、开闭原则、里氏替换、接口隔离、依赖倒置
+2. **KISS原则**: Keep It Simple, Stupid
+3. **DRY原则**: Don't Repeat Yourself
+4. **YAGNI原则**: You Aren't Gonna Need It
+
+## 技术实现要求
+- [ ] 前端页面完整实现
+- [ ] 后端API路由
+- [ ] 数据库Schema设计
+- [ ] API调用集成
+- [ ] 响应式布局
+- [ ] 错误处理
+- [ ] 加载状态
+- [ ] 表单验证
+
+## 全局布局要求
+### 顶部导航栏 (Top Navbar)
+- **左侧**: Logo + 应用名称 "InvestAI"
+- **右侧**: 四个导航链接
+  - 用户中心 - `/user`
+  - 项目库 - `/projects`
+  - 智能推荐 - `/recommend`
+  - 推荐记录 - `/history`
+- **路由切换**: 无刷新客户端路由
+- **认证保护**: 未登录用户只能访问登录页，登录后才能访问其他页面
+
+## 当前实现进度
+### ✅ Phase 1: 用户中心模块 (/user) - 已完成
+
+#### 完成的功能
+1. **用户注册/登录表单** ✅
+   - 注册字段：用户名（唯一）、密码（bcrypt加密）
+   - 登录字段：用户名、密码
+   - JWT token 会话管理（7天有效期）
+   - 防止XSS和CSRF攻击
+   - 表单切换（登录/注册）
+   - 错误提示和加载状态
+
+2. **投资画像编辑器** ✅
+   - 风险偏好：单选框（保守/稳健/激进）
+   - 投资金额：数字输入（单位：元）
+   - 投资期限：下拉选择（1年以内/1-3年/3-5年/5年以上）
+   - 投资目标：下拉选择（保本增值/稳健收益/高收益增长）
+   - 保存按钮：同步至SQLite数据库
+   - 编辑/取消模式切换
+   - 实时验证和错误提示
+
+3. **个人信息展示卡片** ✅
+   - 展示用户名、风险偏好、投资金额、投资期限等
+   - 支持实时刷新
+   - 彩色标签（根据风险偏好）
+   - 格式化金额显示
+
+4. **全局导航栏** ✅
+   - Logo + InvestAI 品牌名
+   - 四个导航链接（响应式高亮）
+   - 退出登录功能
+   - 粘性定位（sticky top）
+
+5. **认证状态管理** ✅
+   - AuthContext（React Context）
+   - localStorage持久化
+   - 自动登录恢复
+   - 路由保护（未登录重定向）
+
+#### 技术实现细节
+- **数据库**: SQLite + Prisma ORM
+  - users表：id, username, password, createdAt, updatedAt
+  - user_profiles表：id, userId, riskPreference, investmentAmount, investmentPeriod, investmentGoal, updatedAt
+  
+- **API路由**:
+  - POST /api/auth/register - 用户注册
+  - POST /api/auth/login - 用户登录
+  - GET /api/profile - 获取用户画像
+  - POST /api/profile - 保存/更新用户画像
+
+- **安全措施**:
+  - bcrypt密码加密（10轮salt）
+  - JWT认证（jose库）
+  - Zod输入验证
+  - Bearer token认证
+  - 密码不返回前端
+
+- **文件结构**:
+  ```
+  ✅ app/login/page.tsx          # 登录注册页面
+  ✅ app/user/page.tsx           # 用户中心页面
+  ✅ app/api/auth/login/route.ts  # 登录API
+  ✅ app/api/auth/register/route.ts # 注册API
+  ✅ app/api/profile/route.ts     # 画像API
+  ✅ src/components/Navbar.tsx    # 导航栏
+  ✅ src/context/AuthContext.tsx  # 认证上下文
+  ✅ src/lib/auth.ts             # 认证工具
+  ✅ src/lib/prisma.ts           # 数据库客户端
+  ✅ src/lib/validation.ts       # 验证Schema
+  ✅ prisma/schema.prisma        # 数据库Schema
+  ✅ scripts/init-db.js          # 数据库初始化
+  ```
+
+#### 占位页面
+- ✅ `/projects` - 项目库（Coming Soon）
+- ✅ `/recommend` - 智能推荐（Coming Soon）
+- ✅ `/history` - 推荐记录（Coming Soon）
+
+#### 文档
+- ✅ PROJECT_SETUP.md - 完整项目文档
+- ✅ QUICK_START.md - 快速启动指南
+
+### 🔜 Phase 2: 项目库模块 (/projects) - 已完成 ✅
+
+#### 完成的功能
+1. **新增/编辑项目模态框** ✅
+   - 表单字段：项目名称、项目类型（5种）、风险等级（1-5星）、预期收益率、投资门槛、项目描述
+   - 点击"添加投资项目"弹出新增模态框
+   - 点击表格"编辑"按钮弹出编辑模态框并回显数据
+   - 支持数据验证和错误提示
+
+2. **高级筛选栏** ✅
+   - 按项目类型筛选（下拉选择：全部/债券/基金/股票/理财产品/其他）
+   - 按风险等级筛选（下拉选择：1-5星）
+   - 按投资门槛筛选（输入框：≤X元）
+   - 重置筛选按钮
+
+3. **项目数据表格** ✅
+   - 展示列：项目名称 | 类型 | 风险等级（彩色星级） | 预期收益率 | 投资门槛 | 操作
+   - 操作列：编辑 + 删除按钮
+   - 悬停高亮效果
+   - 空状态提示
+   - 统计信息显示
+
+4. **删除确认对话框** ✅
+   - 二次确认机制
+   - 防止误操作
+   - 加载状态反馈
+
+#### 技术实现细节
+- **数据库扩展**: 
+  - projects表：id, name, type, riskLevel, expectedReturn, investmentThreshold, description, createdAt, updatedAt
+
+- **API路由**:
+  - GET /api/projects - 获取项目列表（支持筛选参数）
+  - POST /api/projects - 创建新项目
+  - PUT /api/projects/[id] - 更新项目
+  - DELETE /api/projects/[id] - 删除项目
+
+- **前端组件**:
+  - ProjectModal - 新增/编辑模态框（表单验证、回显）
+  - ConfirmDialog - 通用确认对话框
+  - ProjectsPage - 项目库主页面（表格、筛选、CRUD）
+
+- **数据筛选**:
+  - 前端客户端筛选（实时响应）
+  - 支持多条件组合筛选
+  - 筛选条件持久化在组件状态
+
+- **文件结构**:
+  ```
+  ✅ app/projects/page.tsx          # 项目库主页面
+  ✅ app/api/projects/route.ts      # 项目CRUD API
+  ✅ app/api/projects/[id]/route.ts # 单项目API
+  ✅ src/components/ProjectModal.tsx # 项目模态框
+  ✅ src/components/ConfirmDialog.tsx # 确认对话框
+  ✅ src/lib/validation.ts          # 项目验证Schema
+  ✅ prisma/schema.prisma           # 数据库Schema扩展
+  ✅ scripts/init-db.js             # 数据库初始化脚本
+  ```
+
+#### UI设计亮点
+- 黑白色系保持一致（zinc系列）
+- 风险等级彩色星级（绿/蓝/黄/橙/红）
+- 响应式表格（移动端横向滚动）
+- 模态框滚动支持（max-h-90vh）
+- 悬停动画和过渡效果
+
+### 🔜 Phase 3: 智能推荐模块 (/recommend)
+待实现...
+
+### 🔜 Phase 4: 推荐记录模块 (/history)
+待实现...
